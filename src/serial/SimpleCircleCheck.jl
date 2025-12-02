@@ -1,5 +1,3 @@
-module Improved22
-
 using Random
 using DelimitedFiles
 using LinearAlgebra
@@ -21,10 +19,9 @@ const MOVES = [(0, 1), (0, -1), (1, 0), (-1, 0)]
 const THRESHOLD_DIST = 10
 
 # --- Input Parsing ---
-function parse_inputs()
-    args = deepcopy(ARGS)
+function parse_inputs(args::Vector{String})
     if length(args) < 4
-        println("Usage: script.jl width height particles_count steps [start_col] [start_row] [out_file]")
+        println(Core.stdout, "Usage: script.jl width height particles_count steps [start_col] [start_row] [out_file]")
         exit(1)
     end
 
@@ -38,11 +35,7 @@ function parse_inputs()
     out_file = length(args) >= 7 ? args[7] : "crystal.txt"
 
     if start_col > width || start_row > height
-        println("Starting point should be inside the matrix")
-        println(start_col)
-        println(start_row)
-        println(width)
-        println(height)
+        println(Core.stdout, "Starting point should be inside the matrix")
         exit(1)
     end
 
@@ -124,9 +117,8 @@ function run_dla(grid::Matrix{ElemT}, start::CoordL, steps::UInt, particles::Vec
     end
 end
 
-
-function (@main)(ARGS)
-    shape, start, particles_count, steps, out_file = parse_inputs()
+function (@main)(args::Vector{String})::Cint
+    shape, start, particles_count, steps, out_file = parse_inputs(args)
 
     grid = zeros(ElemT, shape)
     grid[start...] = 1
@@ -139,13 +131,11 @@ function (@main)(ARGS)
     cols = rand(prng, Vector{RowT}(1:width), particles_count)
     particles = collect(zip(rows, cols))
 
-    print("Simulation time: ")
-    @timev run_dla(grid, start, steps, particles, prng)
+    run_dla(grid, start, steps, particles, prng)
 
-    open(out_file, "w") do io
-        write(io, string(height), ' ', string(width), '\n')
-        writedlm(io, grid, ' ')
-    end
-end
+    io = Base.open(out_file, "w")
+    write(io, string(height) * ' ' * string(width) * '\n')
+    writedlm(io, grid, ' ')
 
+    return 0
 end

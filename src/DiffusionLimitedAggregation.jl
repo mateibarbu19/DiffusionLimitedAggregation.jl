@@ -1,11 +1,10 @@
 module DiffusionLimitedAggregation
 
-greet() = print("Hello World!")
+function (@main)(args::Vector{String})::Cint
+    println(Core.stdout, "Main app: ", join(args, " "))
+    println(Core.stdout, "It just prints its arguments!")
 
-function (@main)(ARGS)
-    println("Main app: ", join(ARGS, " "))
+    return 0
 end
-
-include("serial/Serial.jl")
 
 end # module DiffusionLimitedAggregation

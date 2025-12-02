@@ -1,3 +1,10 @@
+# Julia Artifacts
 .julia/
+build/
 
+# Algorithm output
+crystal.txt
+crystal.png
+
+# Nix Artifacts
 result

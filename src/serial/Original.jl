@@ -1,5 +1,3 @@
-module Original
-
 using Random
 using DelimitedFiles
 
@@ -33,8 +31,8 @@ function parse_inputs()
     particles_count = parse(UInt, args[3])
     steps = parse(UInt, args[4])
 
-    start_col = length(args) >= 6 ? parse(RowT, args[6]) : (div(width, 2) + 1)
-    start_row = length(args) >= 5 ? parse(RowT, args[5]) : (div(height, 2) + 1)
+    start_col = length(args) >= 5 ? parse(RowT, args[5]) : (div(width, 2) + 1)
+    start_row = length(args) >= 6 ? parse(RowT, args[6]) : (div(height, 2) + 1)
     out_map = length(args) >= 7 ? args[7] : "crystal.txt"
 
     if start_col > width || start_row > height
@@ -162,6 +160,4 @@ function (@main)(ARGS)
         write(io, string(height), ' ', string(width), '\n')
         writedlm(io, map, ' ')
     end
-end
-
 end
