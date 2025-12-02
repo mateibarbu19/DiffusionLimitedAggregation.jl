@@ -66,6 +66,29 @@ $ make build/bin/Improved
 
 The [original script](src/serial/Original.jl) is not compilable on purpose!
 
+## Profiling
+
+Modify a Julia source as follows.
+
+```julia
+using Profile
+using PProf
+
+Profile.clear()
+@profile run_dla(grid, start, steps, particles, prng)
+# or @profile_walltime
+pprof(web=false)
+```
+
+Then trigger the profiling.
+
+```sh
+# Generate analysis
+$ julia src/serial/SimpleCircleCheck.jl 501 501 10000 100000 251 251 /mnt/my-ramdisk/crystal.txt
+# View it
+$ pprof -http=:8080 profile.pb.gz
+```
+
 ## References
 
 > However writing a multi-threaded code [...] is difficult [...]

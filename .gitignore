@@ -2,6 +2,9 @@
 .julia/
 build/
 
+# Pprof artifacts
+profile.pb.gz
+
 # Algorithm output
 crystal.txt
 crystal.png

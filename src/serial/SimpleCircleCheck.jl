@@ -16,7 +16,7 @@ const NEIGHBORS = [
     (1, -1), (1, 0), (1, 1)
 ]
 const MOVES = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-const THRESHOLD_DIST = 10
+const THRESHOLD_DIST = 2
 
 # --- Input Parsing ---
 function parse_inputs(args::Vector{String})

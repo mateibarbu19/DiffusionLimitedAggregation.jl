@@ -7,12 +7,14 @@ authors = ["Matei Barbu <mateibarbu19@disroot.org>"]
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 JuliaC = "acedd4c2-ced6-4a15-accc-2607eb759ba2"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+PProf = "e4faabce-9ead-11e9-39d9-4379958e3056"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [compat]
 DelimitedFiles = "1.9.1"
 JuliaC = "0.2.2"
 LinearAlgebra = "1.12.0"
+PProf = "3.2.0"
 Random = "1.11.0"
 julia = "1.12"
 

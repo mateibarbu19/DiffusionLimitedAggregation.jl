@@ -23,6 +23,8 @@
           ])
 
           hyperfine
+          pprof
+          graphviz
         ];
 
         env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
