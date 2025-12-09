@@ -13,7 +13,7 @@
     in
     {
       devShells.${system}.default = pkgs.mkShell {
-        name = "julia-dev-env";
+        name = "julia-dev";
 
         buildInputs = with pkgs; [
           bashInteractive
@@ -25,6 +25,7 @@
           hyperfine
           pprof
           graphviz
+          yq
         ];
 
         env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [

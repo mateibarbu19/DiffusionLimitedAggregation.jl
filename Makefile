@@ -6,7 +6,7 @@ JULIAC   = juliac
 OUT_DIR  = build/bin
 
 # List all directories containing source code here
-SRC_DIRS = src/serial src/parallel
+SRC_DIRS = src/serial src/parallel src/test
 
 # 1. Automatic Discovery
 #    Find all .jl files in the listed directories
@@ -42,7 +42,8 @@ $(OUT_DIR)/%: %.jl | $(OUT_DIR)
 #    Since we use vpath, we only need the filename 'Improved22.jl'
 $(OUT_DIR)/main: src/DiffusionLimitedAggregation.jl | $(OUT_DIR)
 	@echo "Building custom app $@ from $<..."
-	$(JULIAC) --trim --output-exe $(notdir $@) --bundle build .
+	$(JULIAC) --trim --output-exe $(notdir $@) .
+	@mv $(notdir $@) $(OUT_DIR)
 
 # Directory creation
 $(OUT_DIR):

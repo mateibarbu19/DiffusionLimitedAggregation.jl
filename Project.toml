@@ -4,18 +4,26 @@ version = "0.1.0"
 authors = ["Matei Barbu <mateibarbu19@disroot.org>"]
 
 [deps]
+ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 JuliaC = "acedd4c2-ced6-4a15-accc-2607eb759ba2"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+OhMyThreads = "67456a42-1dca-4109-a031-0a68de7e3ad5"
 PProf = "e4faabce-9ead-11e9-39d9-4379958e3056"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [compat]
+ArgParse = "1.2.0"
+BenchmarkTools = "1.6.3"
 DelimitedFiles = "1.9.1"
 JuliaC = "0.2.2"
 LinearAlgebra = "1.12.0"
+OhMyThreads = "0.8.3"
 PProf = "3.2.0"
 Random = "1.11.0"
+YAML = "0.4.16"
 julia = "1.12"
 
 [apps.main]

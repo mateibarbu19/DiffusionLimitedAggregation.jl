@@ -68,6 +68,15 @@ The [original script](src/serial/Original.jl) is not compilable on purpose!
 
 ## Profiling
 
+### My way
+
+```
+$ julia src/FileWithProfiling.jl [params] --profiling_file prof.log
+$ ./tools/annotate_source.sh prof.log | bat -l julia
+```
+
+### The traditional way
+
 Modify a Julia source as follows.
 
 ```julia

@@ -5,6 +5,10 @@ build/
 # Pprof artifacts
 profile.pb.gz
 
+# Profiling artifacts
+prof.yaml
+profiling_*.jl
+
 # Algorithm output
 crystal.txt
 crystal.png

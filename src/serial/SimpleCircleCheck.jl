@@ -1,6 +1,5 @@
 using Random
 using DelimitedFiles
-using LinearAlgebra
 
 # Type aliases
 const ElemT = UInt8
