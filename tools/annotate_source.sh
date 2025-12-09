@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-PROFILE_FILE="$1"
+PROFILING_YAML="$1"
 
 # 1. Find the highest number (strips "profiling_" and ".jl")
 #    If no files exist, "head" returns nothing.
@@ -19,10 +19,10 @@ next_num=$((last_num + 1))
 printf -v new_filename "profiling_%02d.jl" "$next_num"
 
 # 5. Extract metadata from the profile log
-# Get the full path to the source script 
-SCRIPT_PATH=$(grep "Script path:" "$PROFILE_FILE" | awk '{print $3}')
 # Get the delay value (e.g., 0.001) 
-DELAY=$(grep "Delay:" "$PROFILE_FILE" | awk '{print $2}')
+DELAY=$(yq -r '.sampling_delay' $PROFILING_YAML)
+# Get the full path to the source script
+SCRIPT_PATH=$(yq -r '.script_path' $PROFILING_YAML)
 # Get the filename (e.g., NewCircleCheck.jl) to match against the profile table
 SCRIPT_BASENAME=$(basename "$SCRIPT_PATH")
 
@@ -32,10 +32,21 @@ if [ ! -f "$SCRIPT_PATH" ]; then
     exit 1
 fi
 
+echo "# Annotate source with profiling data" > "${new_filename}"
+echo "# " >> "${new_filename}"
+echo "# Grid shape:" "$(yq -r '.grid_shape' $PROFILING_YAML)" >> "${new_filename}"
+echo "# Starting point:" "$(yq -r '.start' $PROFILING_YAML)" >> "${new_filename}"
+echo "# Particles count:" "$(yq -r '.particles_count' $PROFILING_YAML)" >> "${new_filename}"
+echo "# Steps:" "$(yq -r '.steps' $PROFILING_YAML)" >> "${new_filename}"
+echo "# Output file:" "$(yq -r '.output_file' $PROFILING_YAML)" >> "${new_filename}"
+echo "# Sampling delay:" "$(yq -r '.sampling_delay' $PROFILING_YAML)" >> "${new_filename}"
+echo "" >> "${new_filename}"
+
 # 6. Process the files using awk
 # We pass the profile data path, the delay, and the script name as variables.
 # We then read the actual Source Code file as the main input to awk.
-awk -v profile="$PROFILE_FILE" \
+yq -r '.source_code' "$PROFILING_YAML" | \
+awk -v profile=<(yq -r '.profiling_data' "$PROFILING_YAML") \
     -v delay="$DELAY" \
     -v target="$SCRIPT_BASENAME" '
     BEGIN {
@@ -79,6 +90,6 @@ awk -v profile="$PROFILE_FILE" \
             print line_content
         }
     }
-' "$SCRIPT_PATH" > "$new_filename"
+' >> "${new_filename}"
 
-echo "Printed to ${new_filename}."
+echo "${new_filename}"

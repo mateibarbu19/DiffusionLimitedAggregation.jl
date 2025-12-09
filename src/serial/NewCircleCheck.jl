@@ -16,6 +16,7 @@ const RowT = Int64
 const CoordT = Tuple{RowT, RowT}
 const RowL = Int64
 const CoordL = Tuple{RowL, RowL}
+const DistT = Float64
 
 const FRACTAL_DIMENSION = Float64(1.7)
 
@@ -26,7 +27,7 @@ const NEIGHBORS = (
     (1, -1), (1, 0), (1, 1)
 )
 const MOVES = ((0, 1), (0, -1), (1, 0), (-1, 0))
-const THRESHOLD_DIST::Float64 = 2
+const THRESHOLD_DIST = DistT(2)
 
 const CACHED_RESULT = Ref{Matrix{ElemT}}()
 
@@ -128,23 +129,22 @@ function parse_inputs(args::Vector{String})
     return shape, start, particles_count, steps, parsed_args["output_file"], parsed_args["samples_count"], parsed_args["profiling_file"]
 end
 
-
 # --- Main Simulation ---
 function run_dla(grid::Matrix{ElemT}, start::CoordL, steps::UInt, particles::Vector{CoordT}, prng::Xoshiro)
     height, width = size(grid)
 
-    active_count::UInt = size(particles, 1)
+    active_count::UInt = length(particles)
 
     max_dist_plus_th = THRESHOLD_DIST
     start_row = start[1]
     start_col = start[2]
 
     for _ in 1:steps
-        special_val::UInt = 1
+        i::UInt = 1
         @if_stats cnt::UInt = 0
 
-        while special_val <= active_count
-            r, c = @inbounds particles[special_val]
+        while i <= active_count
+            r, c = @inbounds particles[i]
 
             should_crystallized = false
 
@@ -171,7 +171,7 @@ function run_dla(grid::Matrix{ElemT}, start::CoordL, steps::UInt, particles::Vec
                 max_dist_plus_th = max(max_dist_plus_th, dist + THRESHOLD_DIST)
 
                 # Swap with last
-                @inbounds particles[special_val] = @inbounds particles[active_count]
+                @inbounds particles[i] = @inbounds particles[active_count]
                 # Pop last
                 active_count -= 1
 
@@ -194,9 +194,9 @@ function run_dla(grid::Matrix{ElemT}, start::CoordL, steps::UInt, particles::Vec
                     nc = width - 1
                 end
 
-                @inbounds particles[special_val] = nr, nc
+                @inbounds particles[i] = nr, nc
 
-                special_val += 1
+                i += 1
             end
         end
 
@@ -265,6 +265,7 @@ function (@main)(args::Vector{String})::Cint
             "script_path"  => abspath(PROGRAM_FILE),
             "source_code" => read(PROGRAM_FILE, String),
             "grid_shape" => "$(Int.(shape))",
+            "start" => "$(Int.(start))",
             "particles_count" => "$particles_count",
             "steps" => "$steps",
             "output_file" => "$out_file",
@@ -274,16 +275,15 @@ function (@main)(args::Vector{String})::Cint
         @profile run_dla(grid, start, steps, particles, prng)
 
         buf = IOBuffer()
+        println(buf, "Un1nT3r3sT1Ng_StTr1nG")
         Profile.print(IOContext(buf, :displaysize => (100000, 10000)), format=:flat)
-        s = String(take!(buf))
-        s = s[1:findlast('\n', chomp(s))]
-        metadata["profiling_data"] = s
+        metadata["profiling_data"] = String(take!(buf))
 
         YAML.write_file(profiling_file, metadata)
     else
         # Helpers just in case
         # InteractiveUtils.@code_warntype run_dla(grid, start, steps, particles, prng)
-        # InteractiveUtils.@code_llvm optimize=false run_dla(grid, start, steps, particles, prng)
+        # InteractiveUtils.@code_llvm run_dla(grid, start, steps, particles, prng)
 
         run_dla(grid, start, steps, particles, prng)
     end
