@@ -1,6 +1,7 @@
 using ArgParse: ArgParseSettings, add_arg_group!, @add_arg_table!, parse_args
 using Random: Xoshiro, rand
 using DelimitedFiles: writedlm
+using KernelAbstractions.Extras.LoopInfo: @unroll
 
 using BenchmarkTools: @benchmarkable, run
 
@@ -8,38 +9,48 @@ using Profile
 using InteractiveUtils
 
 using YAML
+using OrderedCollections
 using Dates
 
 # Type aliases
 const ElemT = UInt8
-const RowT = Int64
+const RowT = UInt16
 const CoordT = Tuple{RowT, RowT}
-const RowL = Int64
-const CoordL = Tuple{RowL, RowL}
-const DistT = Float64
+const RowTL = Int64
+const CoordTL = Tuple{RowTL, RowTL}
+const DistT = UInt64
 
-const FRACTAL_DIMENSION = Float64(1.7)
+const FRACTAL_DIMENSION = Float64(1.71)
 
 const MASTER_SEED = UInt64(0x394934714f2ae5a4)
-const NEIGHBORS = (
+const NEIGHBORS = @. CoordTL((
     (-1, -1), (-1, 0), (-1, 1),
     (0, -1), (0, 1),
     (1, -1), (1, 0), (1, 1)
-)
-const MOVES = ((0, 1), (0, -1), (1, 0), (-1, 0))
+))
+const MOVES = @. CoordTL(((0, 1), (0, -1), (1, 0), (-1, 0)))
 const THRESHOLD_DIST = DistT(2)
 
 const CACHED_RESULT = Ref{Matrix{ElemT}}()
 
-const WRITE_STATS = false
-const global_storage = Ref(Int[])
-macro if_stats(ex)
-    if WRITE_STATS
+macro if_flag(flag, expr)
+    if flag
         # 'esc' prevents the macro from renaming variables (hygiene)
-        return esc(ex)
+        return esc(expr)
     else
         return nothing
     end
+end
+
+const WRITE_STATS = false
+const global_storage = Ref(Int[])
+macro if_track_stats(expr)
+    return :(@if_flag($WRITE_STATS, $(esc(expr))))
+end
+
+const WRITE_UNCRYSTALLIZED = false
+macro if_dump_uncrystallized(expr)
+    return :(@if_flag($WRITE_UNCRYSTALLIZED, $(esc(expr))))
 end
 
 # --- Input Parsing ---
@@ -48,7 +59,7 @@ function parse_inputs(args::Vector{String})
 
     add_arg_group!(s, "Simulation setup", exclusive=true, required=true)
     @add_arg_table! s begin
-        "--new"
+        "--new", "-n"
             action = :store_arg
             arg_type = RowT
 
@@ -78,14 +89,14 @@ function parse_inputs(args::Vector{String})
             # default = nothing
             help = "number of simulation steps"
 
-        "--output"
+        "--output", "-o"
             arg_type = String
             action = :store_arg
             dest_name = "output_file"
             default = "crystal.txt"
             help = "output file name"
 
-        "--benchmark"
+        "--benchmark", "-b"
             arg_type = String
             action = :store_arg
             arg_type = Int
@@ -93,7 +104,7 @@ function parse_inputs(args::Vector{String})
             default = 0
             help = "how many benchmark samples to run"
 
-        "--profiling_file"
+        "--profiling_file", "-p"
             arg_type = String
             action = :store_arg
             arg_type = String
@@ -121,81 +132,95 @@ function parse_inputs(args::Vector{String})
     end
 
     if length(parsed_args["start"]) != 0
-        start = CoordL(parsed_args["start"])
+        start = CoordTL(parsed_args["start"])
     else
-        start = CoordL(div.(shape, 2) .+ 1)
+        start = CoordTL(@. div(shape, 2) + 1)
     end
 
     return shape, start, particles_count, steps, parsed_args["output_file"], parsed_args["samples_count"], parsed_args["profiling_file"]
 end
 
+get_arity(t::Tuple{Vararg{Any, N}}) where N = N
+
+@inline function should_crystallize(row, col, height, width, grid)
+    @inbounds @unroll for i in 1:get_arity(NEIGHBORS)
+        dr, dc = NEIGHBORS[i]
+        nr, nc = row + dr, col + dc
+
+        if 1 <= nr <= height && 1 <= nc <= width
+            if grid[nr, nc] > 0
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+@inline function move_particle(row, col, height, width, prng)
+    # Move particle
+    dr, dc = rand(prng, MOVES)
+
+    nr, nc = row + dr, col + dc
+
+    # Bounce logic
+    if nr < 1
+        nr = 2
+    elseif nr > height
+        nr = height - 1
+    end
+    if nc < 1
+        nc = 2
+    elseif nc > width
+        nc = width - 1
+    end
+
+    # ATTOW, if we return a tuple, Julia can't optimize the cast
+    a = nr % RowT
+    b = nc % RowT
+
+    return a, b
+end
+
 # --- Main Simulation ---
-function run_dla(grid::Matrix{ElemT}, start::CoordL, steps::UInt, particles::Vector{CoordT}, prng::Xoshiro)
-    height, width = size(grid)
+function run_dla(grid::Matrix{ElemT}, start::CoordTL, steps::UInt, particles::Vector{CoordT}, prng::Xoshiro)::Nothing
+    height, width = size(grid) .% RowTL
 
-    active_count::UInt = length(particles)
+    active_count = length(particles)
 
-    max_dist_plus_th = THRESHOLD_DIST
+    max_dist_plus_th = THRESHOLD_DIST^2
     start_row = start[1]
     start_col = start[2]
 
     for _ in 1:steps
-        i::UInt = 1
-        @if_stats cnt::UInt = 0
+        i::typeof(active_count) = 1
+        @if_track_stats crystallized_cnt = 0
 
-        while i <= active_count
-            r, c = @inbounds particles[i]
+        @inbounds while i <= active_count
+            r, c = particles[i] .% RowTL
 
-            should_crystallized = false
+            dist = ((r - start_row) ^ 2 + (c - start_col) ^ 2) % DistT
 
-            dist = √((r - start_row) ^ 2 + (c - start_col) ^ 2)
-
+            crystallized = false
             if dist < max_dist_plus_th
-                # Test if the particle should crystallize
-                for (dr, dc) in NEIGHBORS
-                    nr, nc = r + dr, c + dc
-
-                    if 1 <= nr <= height && 1 <= nc <= width
-                        if @inbounds grid[nr, nc] > 0
-                            should_crystallized = true
-                            break
-                        end
-                    end
-                end
+                crystallized = should_crystallize(r, c, height, width, grid)
             end
 
-            if should_crystallized
-                # Crystallize
-                @inbounds grid[r, c] += 1
+            if crystallized
+                # Allow overflow, not wise, but consistent with C version
+                grid[r, c] = (1 + grid[r, c]) % ElemT
 
-                max_dist_plus_th = max(max_dist_plus_th, dist + THRESHOLD_DIST)
+                potential_new_max = Base.unsafe_trunc(DistT, ceil((√dist + THRESHOLD_DIST) ^ 2))
+                max_dist_plus_th = max(max_dist_plus_th, potential_new_max)
 
                 # Swap with last
-                @inbounds particles[i] = @inbounds particles[active_count]
+                particles[i] = particles[active_count]
                 # Pop last
                 active_count -= 1
 
-                @if_stats cnt += 1
+                @if_track_stats crystallized_cnt += 1
             else
-                # Move particle
-                dr, dc = rand(prng, MOVES)
-
-                nr, nc = r + dr, c + dc
-
-                # Bounce logic
-                if nr < 1
-                    nr = 2
-                elseif nr > height
-                    nr = height - 1
-                end
-                if nc < 1
-                    nc = 2
-                elseif nc > width
-                    nc = width - 1
-                end
-
-                @inbounds particles[i] = nr, nc
-
+                particles[i] = move_particle(r, c, height, width, prng)
                 i += 1
             end
         end
@@ -204,31 +229,33 @@ function run_dla(grid::Matrix{ElemT}, start::CoordL, steps::UInt, particles::Vec
             break
         end
 
-        @if_stats if cnt > 0
+        @if_track_stats if crystallized_cnt > 0
             v = global_storage[]
-            push!(v, cnt)
+            push!(v, crystallized_cnt)
         end
     end
 
-    for i in 1:active_count
-        r, c = @inbounds particles[i]
-        @inbounds grid[r, c] = 255
+    @if_dump_uncrystallized @inbounds for i in 1:active_count
+        r, c = particles[i]
+        grid[r, c] = 255
     end
 
     if !isassigned(CACHED_RESULT)
         CACHED_RESULT[] = grid
     end
+
+    return
 end
 
 function (@main)(args::Vector{String})::Cint
     shape, start, particles_count, steps, out_file, samples_count, profiling_file = parse_inputs(args)
     println("Running a DLA simulation.")
-    println("Grid shape: $(Int.(shape))")
-    println("Starting point: $(Int.(start))")
-    println("Particles count: $particles_count")
-    println("Steps: $steps")
-    println("Output file: $out_file")
-    println("Benchmark sample size: $samples_count")
+    println("Grid shape: ", string(Int.(shape)))
+    println("Starting point: ", string(Int.(start)))
+    println("Particles count: ", particles_count)
+    println("Steps: ", steps)
+    println("Output file: ", out_file)
+    println("Benchmark sample size: ", samples_count)
 
     grid = zeros(ElemT, shape)
     grid[start...] = 1
@@ -248,6 +275,7 @@ function (@main)(args::Vector{String})::Cint
 
             seconds=typemax(Float64),
             evals=1,
+            overhead=300, # nanoseconds
             samples=samples_count,
             gcsample=true,
         )
@@ -260,16 +288,16 @@ function (@main)(args::Vector{String})::Cint
         grid = CACHED_RESULT[]
     elseif !isnothing(profiling_file)
         _, delay = Profile.init()
-        metadata = Dict(
-            "timestamp" => string(now()),
+        metadata = OrderedDict(
             "script_path"  => abspath(PROGRAM_FILE),
+            "output_file" => out_file,
+            "grid_shape" => Int.(shape),
+            "start" => Int.(start),
+            "particles_count" => particles_count,
+            "steps" => steps,
+            "sampling_delay" => delay,
+            "timestamp" => now(),
             "source_code" => read(PROGRAM_FILE, String),
-            "grid_shape" => "$(Int.(shape))",
-            "start" => "$(Int.(start))",
-            "particles_count" => "$particles_count",
-            "steps" => "$steps",
-            "output_file" => "$out_file",
-            "sampling_delay" => "$delay",
         )
 
         @profile run_dla(grid, start, steps, particles, prng)
@@ -284,8 +312,9 @@ function (@main)(args::Vector{String})::Cint
         # Helpers just in case
         # InteractiveUtils.@code_warntype run_dla(grid, start, steps, particles, prng)
         # InteractiveUtils.@code_llvm run_dla(grid, start, steps, particles, prng)
+        # InteractiveUtils.@code_native run_dla(grid, start, steps, particles, prng)
 
-        run_dla(grid, start, steps, particles, prng)
+        @time run_dla(grid, start, steps, particles, prng)
     end
 
     open(out_file, "w") do io
@@ -293,7 +322,7 @@ function (@main)(args::Vector{String})::Cint
         writedlm(io, grid, ' ')
     end
 
-    @if_stats begin
+    @if_track_stats begin
         open("/mnt/my-ramdisk/stats.txt", "w") do io
             writedlm(io, global_storage[], '\n')
         end
