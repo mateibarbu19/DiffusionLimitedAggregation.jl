@@ -108,6 +108,10 @@ function run_dla(grid::Matrix{ElemT}, start::CoordL, steps::UInt, particles::Vec
                 i += 1
             end
         end
+
+        if active_count == 0
+            break
+        end
     end
 
     for i in 1:active_count
@@ -135,6 +139,7 @@ function (@main)(args::Vector{String})::Cint
     io = Base.open(out_file, "w")
     write(io, string(height) * ' ' * string(width) * '\n')
     writedlm(io, grid, ' ')
+    Base.close(io)
 
     return 0
 end

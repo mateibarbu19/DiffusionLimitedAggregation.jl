@@ -96,6 +96,10 @@ function run_dla(steps::UInt, particles::Tuple{Vector{RowT},Vector{RowT}}, map::
                 i += 1
             end
         end
+
+        if active_count == 0
+            break
+        end
     end
 end
 
@@ -115,6 +119,7 @@ function (@main)(args::Vector{String})::Cint
     io = Base.open(out_map, "w")
     write(io, string(height) * ' ' * string(width) * '\n')
     writedlm(io, map, ' ')
+    Base.close(io)
 
     return 0
 end
