@@ -1,6 +1,6 @@
 # Must haves for serial code
 using ArgParse: ArgParseSettings, add_arg_group!, @add_arg_table!, parse_args
-using Random: Xoshiro, rand
+using Random: Xoshiro, rand, seed!
 using DelimitedFiles: writedlm
 
 # Performance gains
@@ -268,6 +268,12 @@ function run_dla(grid::Matrix{ElemT}, start::CoordTL, steps::UInt, particles::Ve
     return
 end
 
+function patch!()::Nothing
+    @batch for i in 1:Threads.nthreads()
+        seed!(MASTER_SEED + Threads.threadid())
+    end
+end
+
 function (@main)(args::Vector{String})::Cint
     shape, start, particles_count, steps, out_file, samples_count, profiling_file = parse_inputs(args)
     println("Running a DLA simulation.")
@@ -293,7 +299,7 @@ function (@main)(args::Vector{String})::Cint
     if samples_count > 0
         b = @benchmarkable(
             run_dla(g, $start, $steps, ps, p),
-            setup=(g=copy($grid); ps=copy($particles); p=copy($prng)),
+            setup=(g=copy($grid); ps=copy($particles); p=copy($prng); tmp=patch!()),
 
             seconds=typemax(Float64),
             evals=1,
@@ -323,6 +329,7 @@ function (@main)(args::Vector{String})::Cint
             "source_code" => read(PROGRAM_FILE, String),
         )
 
+        patch!()
         @profile run_dla(grid, start, steps, particles, prng)
 
         buf = IOBuffer()
@@ -337,6 +344,7 @@ function (@main)(args::Vector{String})::Cint
         # InteractiveUtils.@code_llvm run_dla(grid, start, steps, particles, prng)
         # InteractiveUtils.@code_native run_dla(grid, start, steps, particles, prng)
 
+        patch!()
         @time run_dla(grid, start, steps, particles, prng)
     end
 
