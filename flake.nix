@@ -18,9 +18,7 @@
         buildInputs = with pkgs; [
           bashInteractive
 
-          (julia.withPackages [
-            "LanguageServer"
-          ])
+          julia
 
           hyperfine
           pprof
