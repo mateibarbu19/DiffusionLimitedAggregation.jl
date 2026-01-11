@@ -282,8 +282,6 @@ function (@main)(args::Vector{String})::Cint
         trail = run(b)
         display(trail)
 
-        _, delay = Profile.init()
-
         grid = CACHED_RESULT[]
     elseif !isnothing(profiling_file)
         _, delay = Profile.init()

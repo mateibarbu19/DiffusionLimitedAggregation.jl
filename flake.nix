@@ -1,5 +1,5 @@
 {
-  description = "Julia development environment with Plots and Pluto";
+  description = "Julia development environment";
 
   inputs = {
     nixpkgs.url = "nixpkgs/25.11";

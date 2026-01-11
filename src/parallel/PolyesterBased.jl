@@ -10,6 +10,7 @@ using Base.Threads: Atomic, atomic_add!, atomic_max!
 using Atomix: @atomic
 
 # Performance measurement
+using Statistics
 using BenchmarkTools: @benchmarkable, run
 using Profile
 using PProf
@@ -304,7 +305,8 @@ function (@main)(args::Vector{String})::Cint
         trail = run(b)
         display(trail)
 
-        _, delay = Profile.init()
+        t = trail.times
+        println("(", minimum(t), ", ", median(t), ", (", quantile(t, 0.25), ", ", quantile(t, 0.75), "))")
 
         grid = CACHED_RESULT[]
     elseif !isnothing(profiling_file)
