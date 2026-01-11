@@ -37,7 +37,6 @@
           export JULIA_DEPOT_PATH="$(realpath .)/.julia"
           export JULIA_PROJECT="$(realpath .)"
           export PATH="$(realpath .)/.julia/bin:$PATH"
-          
 
           mkdir -p "$JULIA_DEPOT_PATH"
 

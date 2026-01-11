@@ -1,12 +1,21 @@
+# Must haves for serial code
 using ArgParse: ArgParseSettings, add_arg_group!, @add_arg_table!, parse_args
 using Random: Xoshiro, rand
 using DelimitedFiles: writedlm
 
-using BenchmarkTools: @benchmarkable, run
+# Performance gains
+using Base.Threads: nthreads, @spawn, @sync
+using Base.Threads: Atomic, atomic_add!, atomic_max!
+using OhMyThreads: index_chunks
+using Atomix: @atomic
 
+# Performance measurement
+using BenchmarkTools: @benchmarkable, run
 using Profile
+using PProf
 using InteractiveUtils
 
+# Enable saving profiling metadata
 using YAML
 using OrderedCollections
 using Dates
@@ -30,6 +39,7 @@ const NEIGHBORS = @. CoordTL((
 const MOVES = @. CoordTL(((0, 1), (0, -1), (1, 0), (-1, 0)))
 const THRESHOLD_DIST = DistT(2)
 
+const MAX_CRYSTALLIZED = 32
 const CACHED_RESULT = Ref{Matrix{ElemT}}()
 
 macro if_flag(flag, expr)
@@ -147,7 +157,8 @@ get_arity(t::Tuple{Vararg{Any, N}}) where N = N
         nr, nc = row + dr, col + dc
 
         if 1 <= nr <= height && 1 <= nc <= width
-            if grid[nr, nc] > 0
+            elem = @atomic :acquire grid[nr, nc]
+            if elem > 0
                 return true
             end
         end
@@ -156,9 +167,9 @@ get_arity(t::Tuple{Vararg{Any, N}}) where N = N
     return false
 end
 
-@inline function move_particle(row, col, height, width, prng)
+@inline function move_particle(row, col, height, width)
     # Move particle
-    dr, dc = rand(prng, MOVES)
+    dr, dc = rand(MOVES)
 
     nr, nc = row + dr, col + dc
 
@@ -181,50 +192,71 @@ end
     return a, b
 end
 
+function step(idcs, grid::Matrix{ElemT}, particles::Vector{CoordT}, start_row::RowTL, start_col::RowTL, height::RowTL, width::RowTL, crystallized_pos, max_dist_plus_th, count)::Nothing
+    @inbounds for i in idcs
+        r, c = particles[i] .% RowTL
+
+        dist = ((r - start_row) ^ 2 + (c - start_col) ^ 2) % DistT
+
+        crystallized = false
+        if dist < max_dist_plus_th[]
+            crystallized = should_crystallize(r, c, height, width, grid)
+        end
+
+        if crystallized
+            # Allow overflow, not wise, but consistent with C version
+            # @inbounds is currently not working here
+            # https://github.com/JuliaConcurrent/Atomix.jl/issues/64
+            @atomic :acquire_release grid[r, c] += 1
+
+            potential_new_max = Base.unsafe_trunc(DistT, ceil((√dist + THRESHOLD_DIST) ^ 2))
+            atomic_max!(max_dist_plus_th, potential_new_max)
+
+            idx = atomic_add!(count, 1)
+            crystallized_pos[idx] = i
+
+            @if_track_stats crystallized_cnt += 1
+        else
+            particles[i] = move_particle(r, c, height, width)
+        end
+    end
+end
+
 # --- Main Simulation ---
 function run_dla(grid::Matrix{ElemT}, start::CoordTL, steps::UInt, particles::Vector{CoordT}, prng::Xoshiro)::Nothing
     height, width = size(grid) .% RowTL
 
-    active_count = length(particles)
+    max_dist_plus_th = Atomic{DistT}(THRESHOLD_DIST^2)
 
-    max_dist_plus_th = THRESHOLD_DIST^2
     start_row = start[1]
     start_col = start[2]
 
-    for _ in 1:steps
-        i::typeof(active_count) = 1
+    # Ints work better for Polyester
+    len = length(particles) % Int
+    crystallized_pos = zeros(Int, 32)
+    count = Atomic{Int}(1) # nr of crystallized particles - 1
+
+    tasks = Vector{Task}(undef, 4 * nthreads())
+
+    @inbounds for _ in 1:steps
         @if_track_stats crystallized_cnt = 0
 
-        @inbounds while i <= active_count
-            r, c = particles[i] .% RowTL
-
-            dist = ((r - start_row) ^ 2 + (c - start_col) ^ 2) % DistT
-
-            crystallized = false
-            if dist < max_dist_plus_th
-                crystallized = should_crystallize(r, c, height, width, grid)
-            end
-
-            if crystallized
-                # Allow overflow, not wise, but consistent with C version
-                grid[r, c] = (1 + grid[r, c]) % ElemT
-
-                potential_new_max = Base.unsafe_trunc(DistT, ceil((√dist + THRESHOLD_DIST) ^ 2))
-                max_dist_plus_th = max(max_dist_plus_th, potential_new_max)
-
-                # Swap with last
-                particles[i] = particles[active_count]
-                # Pop last
-                active_count -= 1
-
-                @if_track_stats crystallized_cnt += 1
-            else
-                particles[i] = move_particle(r, c, height, width, prng)
-                i += 1
-            end
+        active_count = 0
+        for (i, idcs) in enumerate(index_chunks(1:len; n = nthreads()))
+            tasks[i] = @spawn step(idcs, grid, particles, start_row, start_col, height, width, crystallized_pos, max_dist_plus_th, count)
+            active_count = i
         end
+        foreach(i -> wait(tasks[i]), 1:active_count)
 
-        if active_count == 0
+        # Swap
+        for j in 1:(count[] - 1)
+            particles[crystallized_pos[j]] = particles[len]
+            len = len - 1
+        end
+        count[] = 1
+
+        # Check for termination
+        if len == 0
             break
         end
 
@@ -234,7 +266,7 @@ function run_dla(grid::Matrix{ElemT}, start::CoordTL, steps::UInt, particles::Ve
         end
     end
 
-    @if_dump_uncrystallized @inbounds for i in 1:active_count
+    @if_dump_uncrystallized @inbounds for i in 1:len
         r, c = particles[i]
         grid[r, c] = 255
     end
@@ -254,6 +286,7 @@ function (@main)(args::Vector{String})::Cint
     println("Particles count: ", particles_count)
     println("Steps: ", steps)
     println("Output file: ", out_file)
+    println("Thread count: ", nthreads())
     println("Benchmark sample size: ", samples_count)
 
     grid = zeros(ElemT, shape)
